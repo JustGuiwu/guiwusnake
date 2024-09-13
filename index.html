@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>贪吃蛇</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            text-align: center;
+        }
+
+        #gameCanvas {
+            background-color: #000;
+            display: block;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-top: 20px;
+        }
+
+        p {
+            font-size: 20px;
+        }
+
+        #volumeControl {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>贵物贪吃蛇 V2</h1>
+    <p>按 SPACE 开始游戏。使用 WASD 控制蛇的移动。达到10分获胜。</p>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <!-- 添加背景音乐 -->
+    <audio id="backgroundMusic" loop>
+        <source src="background-music.mp3" type="audio/mp3">
+        您的浏览器不支持音频标签。
+    </audio>
+
+    <!-- 音量控制 -->
+    <label for="volumeControl">调整音量：</label>
+    <input id="volumeControl" type="range" min="0" max="1" step="0.01" value="0.5">
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const cellSize = 20;
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const cols = canvasWidth / cellSize;
+        const rows = canvasHeight / cellSize;
+
+        let snake = [];
+        let direction = null;
+        let apple = null;
+        let obstacles = [];
+        let score = 0;
+        let gameOver = false;
+        let gameWin = false;
+        let gameStarted = false;
+        let gameLoop;
+        let musicStarted = false; // 确保音乐只在首次播放
+
+        // 无敌状态变量
+        let invincible = false;
+        let invincibleStartTime = null; // 记录无敌状态开始的时间
+
+        // 作弊码检测变量
+        let cheatCode = ['g', 'u', 'i', 'w', 'u'];
+        let cheatCodeIndex = 0;
+
+        // 获取背景音乐元素
+        const backgroundMusic = document.getElementById('backgroundMusic');
+        const volumeControl = document.getElementById('volumeControl');  // 获取音量调节器
+
+        // 当页面加载时，设置音量和监听音量滑动条的变化
+        window.onload = function () {
+            backgroundMusic.volume = 0.5;
+
+            // 监听音量滑动条的变化
+            volumeControl.addEventListener('input', function () {
+                backgroundMusic.volume = volumeControl.value;
+            });
+        };
+
+        document.addEventListener('keydown', keyDownHandler);
+
+        function keyDownHandler(e) {
+            if (!gameStarted && e.code === 'Space') {
+                e.preventDefault();
+                startGame();
+            } else if (gameStarted) {
+                changeDirection(e);
+                checkCheatCode(e); // 检查作弊码
+            }
+        }
+
+        function startGame() {
+            gameStarted = true;
+            gameOver = false;
+            gameWin = false;
+            score = 0;
+            direction = getRandomDirection();
+            snake = [];
+            const startX = Math.floor(cols / 2);
+            const startY = Math.floor(rows / 2);
+            snake.push({ x: startX, y: startY });
+
+            // 只在首次按下 Space 时播放音乐
+            if (!musicStarted) {
+                backgroundMusic.play().catch(error => {
+                    console.log("无法播放音乐: ", error);
+                });
+                musicStarted = true;  // 确保之后不再重复播放
+            }
+
+            // 初始化无敌状态
+            invincible = true;
+            invincibleStartTime = Date.now(); // 记录无敌状态开始时间
+
+            // 重置作弊码索引
+            cheatCodeIndex = 0;
+
+            placeApple();
+            placeObstacles();
+
+            if (gameLoop) {
+                clearInterval(gameLoop);
+            }
+            gameLoop = setInterval(gameTick, 100);
+        }
+
+        function getRandomDirection() {
+            const directions = ['left', 'up', 'right', 'down'];
+            return directions[Math.floor(Math.random() * directions.length)];
+        }
+
+        function changeDirection(e) {
+            const key = e.key.toLowerCase();
+
+            if (key === 'w' && direction !== 'down') {
+                direction = 'up';
+            } else if (key === 's' && direction !== 'up') {
+                direction = 'down';
+            } else if (key === 'a' && direction !== 'right') {
+                direction = 'left';
+            } else if (key === 'd' && direction !== 'left') {
+                direction = 'right';
+            }
+        }
+
+        function checkCheatCode(e) {
+            const key = e.key.toLowerCase();
+            if (key === cheatCode[cheatCodeIndex]) {
+                cheatCodeIndex++;
+                if (cheatCodeIndex === cheatCode.length) {
+                    gameWin = true;
+                    gameStarted = false;
+                    clearInterval(gameLoop);
+                    draw();
+                }
+            } else {
+                cheatCodeIndex = 0;
+            }
+        }
+
+        function gameTick() {
+            if (gameOver || gameWin) {
+                clearInterval(gameLoop);
+            }
+
+            if (invincible) {
+                const currentTime = Date.now();
+                if (currentTime - invincibleStartTime >= 1500) {
+                    invincible = false;
+                }
+            }
+
+            if (!gameOver && !gameWin) {
+                update();
+            }
+
+            draw();
+        }
+
+        function update() {
+            const head = { ...snake[0] };
+
+            if (direction === 'left') {
+                head.x--;
+            } else if (direction === 'right') {
+                head.x++;
+            } else if (direction === 'up') {
+                head.y--;
+            } else if (direction === 'down') {
+                head.y++;
+            }
+
+            if (head.x < 0) {
+                head.x = cols - 1;
+            } else if (head.x >= cols) {
+                head.x = 0;
+            }
+
+            if (head.y < 0) {
+                head.y = rows - 1;
+            } else if (head.y >= rows) {
+                head.y = 0;
+            }
+
+            for (let segment of snake) {
+                if (segment.x === head.x && segment.y === head.y) {
+                    gameOver = true;
+                    return;
+                }
+            }
+
+            if (!invincible) {
+                for (let obstacle of obstacles) {
+                    if (obstacle.x === head.x && obstacle.y === head.y) {
+                        gameOver = true;
+                        return;
+                    }
+                }
+            }
+
+            snake.unshift(head);
+
+            if (head.x === apple.x && head.y === apple.y) {
+                score++;
+                if (score >= 10) {
+                    gameWin = true;
+                    return;
+                }
+
+                invincible = true;
+                invincibleStartTime = Date.now();
+                placeApple();
+                placeObstacles();
+            } else {
+                snake.pop();
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(apple.x * cellSize + cellSize / 2, apple.y * cellSize + cellSize / 2, cellSize / 2, 0, 2 * Math.PI);
+            ctx.fill();
+
+            ctx.fillStyle = 'gray';
+            for (let obstacle of obstacles) {
+                ctx.fillRect(obstacle.x * cellSize, obstacle.y * cellSize, cellSize, cellSize);
+            }
+
+            const snakeColor = invincible ? 'yellow' : 'lime';
+            for (let segment of snake) {
+                drawRoundedRect(segment.x * cellSize, segment.y * cellSize, cellSize, cellSize, 5, snakeColor);
+            }
+
+            ctx.fillStyle = '#fff';
+            ctx.font = '20px Arial';
+            ctx.fillText('得分：' + score, 10, 20);
+
+            if (invincible) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '20px Arial';
+                ctx.fillText('无敌：' + ((1500 - (Date.now() - invincibleStartTime)) / 1000).toFixed(1) + '秒', canvasWidth - 150, 20);
+            }
+
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '50px Arial';
+                ctx.fillText('游戏结束', canvasWidth / 2 - 100, canvasHeight / 2);
+                ctx.font = '20px Arial';
+                ctx.fillText('按 SPACE 重新开始', canvasWidth / 2 - 100, canvasHeight / 2 + 30);
+                gameStarted = false;
+            }
+
+            if (gameWin) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '50px Arial';
+                ctx.fillText('你赢了！', canvasWidth / 2 - 110, canvasHeight / 2 - 20);
+                ctx.font = '30px Arial';
+                ctx.fillText('🎉 恭喜你！🎉', canvasWidth / 2 - 110, canvasHeight / 2 + 30);
+                ctx.font = '20px Arial';
+                ctx.fillText('按 SPACE 再玩一次', canvasWidth / 2 - 110, canvasHeight / 2 + 60);
+                gameStarted = false;
+            }
+        }
+
+        function drawRoundedRect(x, y, width, height, radius, fillColor) {
+            ctx.fillStyle = fillColor;
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.fill();
+        }
+
+        function placeApple() {
+            let validPosition = false;
+            while (!validPosition) {
+                const x = Math.floor(Math.random() * cols);
+                const y = Math.floor(Math.random() * rows);
+                validPosition = true;
+
+                for (let segment of snake) {
+                    if (segment.x === x && segment.y === y) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+
+                for (let obstacle of obstacles) {
+                    if (obstacle.x === x && obstacle.y === y) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+
+                if (validPosition) {
+                    apple = { x: x, y: y };
+                }
+            }
+        }
+
+        function placeObstacles() {
+            const numObstacles = Math.floor((cols * rows) / 17) + Math.floor(score / 2);
+            obstacles = [];
+            let positions = [];
+
+            for (let x = 0; x < cols; x++) {
+                for (let y = 0; y < rows; y++) {
+                    positions.push({ x: x, y: y });
+                }
+            }
+
+            positions = positions.filter(pos => {
+                return !snake.some(segment => segment.x === pos.x && segment.y === pos.y);
+            });
+
+            positions = positions.filter(pos => pos.x !== apple.x || pos.y !== apple.y);
+
+            for (let i = 0; i < numObstacles; i++) {
+                if (positions.length === 0) break;
+                const index = Math.floor(Math.random() * positions.length);
+                const obstaclePos = positions.splice(index, 1)[0];
+                obstacles.push(obstaclePos);
+            }
+        }
+    </script>
+</body>
+
+</html>
